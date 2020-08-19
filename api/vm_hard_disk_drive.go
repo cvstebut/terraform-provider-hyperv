@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 )
 
 type ControllerType int
@@ -416,7 +417,7 @@ type deleteVmHardDiskDriveArgs struct {
 var deleteVmHardDiskDriveTemplate = template.Must(template.New("DeleteVmHardDiskDrive").Parse(`
 $ErrorActionPreference = 'Stop'
 
-@(Get-VMHardDiskDrive -VmName '{{.VmName}}' -ControllerNumber {{.ControllerNumber}} -ControllerLocation {{.ControllerLocation}}) | Remove-VMHardDiskDrive -Force
+@(Get-VMHardDiskDrive -VmName '{{.VmName}}' -ControllerNumber {{.ControllerNumber}} -ControllerLocation {{.ControllerLocation}}) | Remove-VMHardDiskDrive
 `))
 
 func (c *HypervClient) DeleteVmHardDiskDrive(vmname string, controllerNumber int32, controllerLocation int32) (err error) {
