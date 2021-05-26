@@ -3,9 +3,11 @@ package hyperv
 import (
 	"fmt"
 	"log"
+	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/validation"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
+
 	"github.com/taliesins/terraform-provider-hyperv/api"
 )
 
@@ -73,9 +75,10 @@ func resourceHyperVMachineInstance() *schema.Resource {
 			},
 
 			"dynamic_memory": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  false,
+				Type:         schema.TypeBool,
+				Optional:     true,
+				ExactlyOneOf: []string{"dynamic_memory", "static_memory"},
+				Default:      false,
 			},
 
 			"guest_controlled_cache_types": {
@@ -146,9 +149,10 @@ func resourceHyperVMachineInstance() *schema.Resource {
 			},
 
 			"static_memory": {
-				Type:     schema.TypeBool,
-				Optional: true,
-				Default:  true,
+				Type:         schema.TypeBool,
+				Optional:     true,
+				ExactlyOneOf: []string{"dynamic_memory", "static_memory"},
+				Default:      false,
 			},
 
 			"integration_services": {
@@ -703,6 +707,18 @@ func resourceHyperVMachineInstanceCreate(data *schema.ResourceData, meta interfa
 		return err
 	}
 
+	if generation > 1 {
+		vmFirmwares, err := api.ExpandVmFirmwares(data)
+		if err != nil {
+			return err
+		}
+
+		err = client.CreateOrUpdateVmFirmwares(name, vmFirmwares)
+		if err != nil {
+			return err
+		}
+	}
+
 	err = client.CreateOrUpdateVmProcessors(name, vmProcessors)
 	if err != nil {
 		return err
@@ -816,6 +832,9 @@ func resourceHyperVMachineInstanceRead(data *schema.ResourceData, meta interface
 		return nil
 	}
 
+	data.SetId(name)
+	data.Set("name", vm.Name)
+
 	if vm.DynamicMemory && vm.StaticMemory {
 		return fmt.Errorf("[ERROR][hyperv][read] Dynamic and static can't be both selected at the same time")
 	}
@@ -910,6 +929,39 @@ func resourceHyperVMachineInstanceUpdate(data *schema.ResourceData, meta interfa
 
 	generation := (data.Get("generation")).(int)
 
+	hasChangesThatRequireVmToBeOff := data.HasChange("automatic_critical_error_action") ||
+		data.HasChange("automatic_critical_error_action_timeout") ||
+		data.HasChange("automatic_start_action") ||
+		data.HasChange("automatic_start_delay") ||
+		data.HasChange("automatic_stop_action") ||
+		data.HasChange("checkpoint_type") ||
+		data.HasChange("dynamic_memory") ||
+		data.HasChange("guest_controlled_cache_types") ||
+		data.HasChange("high_memory_mapped_io_space") ||
+		data.HasChange("lock_on_disconnect") ||
+		data.HasChange("low_memory_mapped_io_space") ||
+		data.HasChange("memory_maximum_bytes") ||
+		data.HasChange("memory_minimum_bytes") ||
+		data.HasChange("memory_startup_bytes") ||
+		data.HasChange("notes") ||
+		data.HasChange("processor_count") ||
+		data.HasChange("smart_paging_file_path") ||
+		data.HasChange("snapshot_file_location") ||
+		data.HasChange("static_memory") ||
+		(generation > 1 && data.HasChange("vm_firmware")) ||
+		data.HasChange("vm_processor") ||
+		data.HasChange("integration_services") ||
+		data.HasChange("network_adaptors") ||
+		data.HasChange("dvd_drives") ||
+		data.HasChange("hard_disk_drives")
+
+	if hasChangesThatRequireVmToBeOff {
+		err = turnOffVmIfOn(data, client, name)
+		if err != nil {
+			return err
+		}
+	}
+
 	if data.HasChange("automatic_critical_error_action") ||
 		data.HasChange("automatic_critical_error_action_timeout") ||
 		data.HasChange("automatic_start_action") ||
@@ -951,11 +1003,11 @@ func resourceHyperVMachineInstanceUpdate(data *schema.ResourceData, meta interfa
 		staticMemory := (data.Get("static_memory")).(bool)
 
 		if dynamicMemory && staticMemory {
-			return fmt.Errorf("[ERROR][hyperv][update] Dynamic and static can't be both selected at the same time")
+			return fmt.Errorf("[ERROR][hyperv][update] Dynamic and static memory can't be both selected at the same time i.e. static_memory=true and dynamic_memory=false")
 		}
 
 		if !dynamicMemory && !staticMemory {
-			return fmt.Errorf("[ERROR][hyperv][update] Either dynamic or static must be selected")
+			return fmt.Errorf("[ERROR][hyperv][update] Either dynamic or static memory must be selected i.e. static_memory=true and dynamic_memory=false")
 		}
 
 		err = client.UpdateVm(name, automaticCriticalErrorAction, automaticCriticalErrorActionTimeout, automaticStartAction, automaticStartDelay, automaticStopAction, checkpointType, dynamicMemory, guestControlledCacheTypes, highMemoryMappedIoSpace, lockOnDisconnect, lowMemoryMappedIoSpace, memoryMaximumBytes, memoryMinimumBytes, memoryStartupBytes, notes, processorCount, smartPagingFilePath, snapshotFileLocation, staticMemory)
@@ -964,17 +1016,15 @@ func resourceHyperVMachineInstanceUpdate(data *schema.ResourceData, meta interfa
 		}
 	}
 
-	if generation > 1 {
-		if data.HasChange("vm_firmware") {
-			vmFirmwares, err := api.ExpandVmFirmwares(data)
-			if err != nil {
-				return err
-			}
+	if generation > 1 && data.HasChange("vm_firmware") {
+		vmFirmwares, err := api.ExpandVmFirmwares(data)
+		if err != nil {
+			return err
+		}
 
-			err = client.CreateOrUpdateVmFirmwares(name, vmFirmwares)
-			if err != nil {
-				return err
-			}
+		err = client.CreateOrUpdateVmFirmwares(name, vmFirmwares)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -1040,7 +1090,7 @@ func resourceHyperVMachineInstanceUpdate(data *schema.ResourceData, meta interfa
 		}
 	}
 
-	if data.HasChange("state") {
+	if hasChangesThatRequireVmToBeOff || data.HasChange("state") {
 		waitForStateTimeout, waitForStatePollPeriod, err := api.ExpandVmStateWaitForState(data)
 		if err != nil {
 			return err
@@ -1088,5 +1138,52 @@ func resourceHyperVMachineInstanceDelete(data *schema.ResourceData, meta interfa
 	}
 
 	log.Printf("[INFO][hyperv][delete] deleted hyperv machine: %#v", data)
+	return nil
+}
+
+func turnOffVmIfOn(data *schema.ResourceData, client *api.HypervClient, name string) (err error) {
+	vmState, err := client.GetVmState(name)
+	if err != nil {
+		return err
+	}
+
+	for vmState.State != api.VmState_Off {
+		if vmState.State == api.VmState_Other ||
+			vmState.State == api.VmState_Running ||
+			vmState.State == api.VmState_Paused {
+			waitForStateTimeout, waitForStatePollPeriod, err := api.ExpandVmStateWaitForState(data)
+			if err != nil {
+				return err
+			}
+
+			err = client.UpdateVmState(name, waitForStateTimeout, waitForStatePollPeriod, api.VmState_Off)
+			if err != nil {
+				return err
+			}
+		}
+
+		if vmState.State == api.VmState_RunningCritical ||
+			vmState.State == api.VmState_OffCritical ||
+			vmState.State == api.VmState_StoppingCritical ||
+			vmState.State == api.VmState_SavedCritical ||
+			vmState.State == api.VmState_PausedCritical ||
+			vmState.State == api.VmState_StartingCritical ||
+			vmState.State == api.VmState_ResetCritical ||
+			vmState.State == api.VmState_SavingCritical ||
+			vmState.State == api.VmState_PausingCritical ||
+			vmState.State == api.VmState_ResumingCritical ||
+			vmState.State == api.VmState_FastSavedCritical ||
+			vmState.State == api.VmState_FastSavingCritical {
+			return fmt.Errorf("[ERROR][hyperv][turnOffVmIfOn] vm %#v is in a state of %#v and this must be manually recovered from", name, vmState.State)
+		}
+
+		log.Printf("[INFO][hyperv][turnOffVmIfOn] vm %#v is in a state of %#v and so wait 2 seconds for it turn off", name, vmState.State)
+		time.Sleep(2 * time.Second)
+
+		vmState, err = client.GetVmState(name)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }

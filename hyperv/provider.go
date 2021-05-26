@@ -5,8 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/terraform"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 const (
@@ -41,8 +40,9 @@ const (
 )
 
 // Provider returns a terraform.ResourceProvider.
-func Provider() terraform.ResourceProvider {
-	p := &schema.Provider{
+
+func Provider() *schema.Provider {
+	provider := &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"user": {
 				Type:        schema.TypeString,
@@ -141,16 +141,21 @@ func Provider() terraform.ResourceProvider {
 			"hyperv_machine_instance": resourceHyperVMachineInstance(),
 			"hyperv_vhd":              resourceHyperVVhd(),
 		},
+		DataSourcesMap: map[string]*schema.Resource{
+			"hyperv_network_switch":   dataSourceHyperVNetworkSwitch(),
+			"hyperv_machine_instance": dataSourceHyperVMachineInstance(),
+			"hyperv_vhd":              dataSourceHyperVVhd(),
+		},
 	}
 
-	p.ConfigureFunc = providerConfigure(p)
+	provider.ConfigureFunc = providerConfigure(provider)
 
-	return p
+	return provider
 }
 
 func providerConfigure(p *schema.Provider) schema.ConfigureFunc {
 	return func(d *schema.ResourceData) (interface{}, error) {
-		var err error = nil
+		var err error
 		var cacert []byte = nil
 		cacertPath := d.Get("cacert_path").(string)
 		if cacertPath != "" {

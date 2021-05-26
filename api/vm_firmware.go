@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"log"
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 type ConsoleModeType int
@@ -196,7 +197,7 @@ type createOrUpdateVmFirmwareArgs struct {
 
 var createOrUpdateVmFirmwareTemplate = template.Must(template.New("CreateOrUpdateVmFirmware").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmFirmware = '{{.VmFirmwareJson}}' | ConvertFrom-Json
 
 $SetVMFirmwareArgs = @{}
@@ -227,6 +228,10 @@ func (c *HypervClient) CreateOrUpdateVmFirmware(
 		ConsoleMode:                  consoleMode,
 		PauseAfterBootFailure:        pauseAfterBootFailure,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(createOrUpdateVmFirmwareTemplate, createOrUpdateVmFirmwareArgs{
 		VmFirmwareJson: string(vmFirmwareJson),

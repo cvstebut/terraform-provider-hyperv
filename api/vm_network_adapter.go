@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 type PortMirroring int
@@ -215,10 +215,9 @@ func ExpandNetworkAdapters(d *schema.ResourceData) ([]vmNetworkAdapter, error) {
 
 func FlattenMandatoryFeatureIds(mandatoryFeatureIdStrings []string) *schema.Set {
 	var mandatoryFeatureIds []interface{}
-	if mandatoryFeatureIdStrings != nil {
-		for _, mandatoryFeatureId := range mandatoryFeatureIdStrings {
-			mandatoryFeatureIds = append(mandatoryFeatureIds, mandatoryFeatureId)
-		}
+
+	for _, mandatoryFeatureId := range mandatoryFeatureIdStrings {
+		mandatoryFeatureIds = append(mandatoryFeatureIds, mandatoryFeatureId)
 	}
 
 	return schema.NewSet(schema.HashString, mandatoryFeatureIds)
@@ -334,7 +333,7 @@ type createVmNetworkAdapterArgs struct {
 
 var createVmNetworkAdapterTemplate = template.Must(template.New("CreateVmNetworkAdapter").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmNetworkAdapter = '{{.VmNetworkAdapterJson}}' | ConvertFrom-Json
 
 $dhcpGuard = [Microsoft.HyperV.PowerShell.OnOffState]$vmNetworkAdapter.DhcpGuard
@@ -510,6 +509,10 @@ func (c *HypervClient) CreateVmNetworkAdapter(
 		VlanId:                                 vlanId,
 	})
 
+	if err != nil {
+		return err
+	}
+
 	err = c.runFireAndForgetScript(createVmNetworkAdapterTemplate, createVmNetworkAdapterArgs{
 		VmNetworkAdapterJson: string(vmNetworkAdapterJson),
 	})
@@ -657,7 +660,7 @@ function Test-IsNotInFinalTransitionState($State){
 function Wait-ForNetworkAdapterIps($Name, $Timeout, $PollPeriod, $VmNetworkAdaptersToWaitForIps){
 	$timer = [Diagnostics.Stopwatch]::StartNew()
 	while ($timer.Elapsed.TotalSeconds -lt $Timeout) {
-        $vmObject = Get-VM | ?{$_.Name -eq $vmName}
+        $vmObject = Get-VM -Name "$($vmName)*" | ?{$_.Name -eq $vmName}
 
         if (!(Test-IsNotInFinalTransitionState $vmObject.state)){
             if (Test-CanGetIpsForState $vmObject.state) {
@@ -689,10 +692,10 @@ function Wait-ForNetworkAdapterIps($Name, $Timeout, $PollPeriod, $VmNetworkAdapt
 	} 
 }
 
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmNetworkAdaptersToWaitForIps = '{{.VmNetworkAdaptersWaitForIpsJson}}' | ConvertFrom-Json
 $vmName = '{{.VmName}}'
-$vmObject = Get-VM | ?{$_.Name -eq $vmName}
+$vmObject = Get-VM -Name "$($vmName)*" | ?{$_.Name -eq $vmName}
 $timeout = {{.Timeout}}
 $pollPeriod = {{.PollPeriod}}
 
@@ -712,6 +715,10 @@ func (c *HypervClient) WaitForVmNetworkAdaptersIps(
 ) (err error) {
 
 	vmNetworkAdaptersWaitForIpsJson, err := json.Marshal(vmNetworkAdaptersWaitForIps)
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(waitForVmNetworkAdaptersIpsTemplate, waitForVmNetworkAdaptersIpsArgs{
 		VmName:                          vmName,
@@ -934,6 +941,10 @@ func (c *HypervClient) UpdateVmNetworkAdapter(
 		VlanAccess:                             vlanAccess,
 		VlanId:                                 vlanId,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(updateVmNetworkAdapterTemplate, updateVmNetworkAdapterArgs{
 		VmName:               vmName,

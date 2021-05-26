@@ -3,8 +3,9 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"text/template"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func ExpandDvdDrives(d *schema.ResourceData) ([]vmDvdDrive, error) {
@@ -64,7 +65,7 @@ type createVmDvdDriveArgs struct {
 
 var createVmDvdDriveTemplate = template.Must(template.New("CreateVmDvdDrive").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmDvdDrive = '{{.VmDvdDriveJson}}' | ConvertFrom-Json
 if (!$vmDvdDrive.Path){
 	$vmDvdDrive.Path = $null
@@ -96,6 +97,10 @@ func (c *HypervClient) CreateVmDvdDrive(
 		Path:               path,
 		ResourcePoolName:   resourcePoolName,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(createVmDvdDriveTemplate, createVmDvdDriveArgs{
 		VmDvdDriveJson: string(vmDvdDriveJson),
@@ -146,7 +151,7 @@ type updateVmDvdDriveArgs struct {
 
 var updateVmDvdDriveTemplate = template.Must(template.New("UpdateVmDvdDrive").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmDvdDrive = '{{.VmDvdDriveJson}}' | ConvertFrom-Json
 
 $vmDvdDrivesObject = @(Get-VMDvdDrive -VmName '{{.VmName}}' -ControllerLocation {{.ControllerLocation}} -ControllerNumber {{.ControllerNumber}} )
@@ -190,6 +195,10 @@ func (c *HypervClient) UpdateVmDvdDrive(
 		Path:               path,
 		ResourcePoolName:   resourcePoolName,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(updateVmDvdDriveTemplate, updateVmDvdDriveArgs{
 		VmName:             vmName,

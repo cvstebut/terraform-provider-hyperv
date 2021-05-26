@@ -3,9 +3,10 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"log"
 	"text/template"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 func DefaultVmProcessors() (interface{}, error) {
@@ -123,7 +124,7 @@ type createOrUpdateVmProcessorArgs struct {
 
 var createOrUpdateVmProcessorTemplate = template.Must(template.New("CreateOrUpdateVmProcessor").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmProcessor = '{{.VmProcessorJson}}' | ConvertFrom-Json
 
 $SetVMProcessorArgs = @{}
@@ -175,6 +176,10 @@ func (c *HypervClient) CreateOrUpdateVmProcessor(
 		EnableHostResourceProtection:                 enableHostResourceProtection,
 		ExposeVirtualizationExtensions:               exposeVirtualizationExtensions,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(createOrUpdateVmProcessorTemplate, createOrUpdateVmProcessorArgs{
 		VmProcessorJson: string(vmProcessorJson),

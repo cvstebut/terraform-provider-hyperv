@@ -1,12 +1,13 @@
 package hyperv
 
 import (
+	"context"
 	"fmt"
 	"log"
 
 	"os"
 
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/taliesins/terraform-provider-hyperv/api"
 )
 
@@ -119,7 +120,7 @@ func resourceHyperVVhd() *schema.Resource {
 	}
 }
 
-func customizeDiffForVhd(diff *schema.ResourceDiff, i interface{}) error {
+func customizeDiffForVhd(ctx context.Context, diff *schema.ResourceDiff, i interface{}) error {
 	path := diff.Get("path").(string)
 
 	if _, err := os.Stat(path); err != nil {
@@ -197,6 +198,9 @@ func resourceHyperVVhdRead(d *schema.ResourceData, meta interface{}) (err error)
 	if err != nil {
 		return err
 	}
+
+	d.SetId(path)
+	d.Set("path", vhd.Path)
 
 	if vhd.Path != "" {
 		log.Printf("[INFO][hyperv][read] unable to retrieved vhd: %+v", path)

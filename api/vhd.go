@@ -155,7 +155,7 @@ type createOrUpdateVhdArgs struct {
 var createOrUpdateVhdTemplate = template.Must(template.New("CreateOrUpdateVhd").Parse(`
 $ErrorActionPreference = 'Stop'
 
-Get-VM | Out-Null
+Import-Module Hyper-V
 $source='{{.Source}}'
 $sourceVm='{{.SourceVm}}'
 $sourceDisk={{.SourceDisk}}
@@ -306,7 +306,13 @@ if (!(Test-Path -Path $vhd.Path)) {
 
     if ($sourceVm) {
         Export-VM -Name $sourceVm -Path $pathDirectory
-        Move-Item "$pathDirectory\$sourceVm\Virtual Hard Disks\*.*" $pathDirectory
+        $targetName = (split-path $vhd.Path -Leaf)
+        $targetName = $targetName.Substring(0,$targetName.LastIndexOf('.')).split('\')[-1]
+        Get-ChildItem -Path "$pathDirectory\$sourceVm\Virtual Hard Disks" |?{$_.BaseName.StartsWith($sourceVm)} | %{
+            $targetNamePath = "$($pathDirectory)\$($_.Name.Replace($sourceVm, $targetName))"
+            Move-Item $_.FullName $targetNamePath
+        }
+
         Remove-Item "$pathDirectory\$sourceVm" -Force -Recurse
 		Get-VHD -path $vhd.Path
     } elseif ($source) {
@@ -373,6 +379,10 @@ func (c *HypervClient) CreateOrUpdateVhd(path string, source string, sourceVm st
 		LogicalSectorSize:  logicalSectorSize,
 		PhysicalSectorSize: physicalSectorSize,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(createOrUpdateVhdTemplate, createOrUpdateVhdArgs{
 		Source:     source,
@@ -458,8 +468,13 @@ type deleteVhdArgs struct {
 
 var deleteVhdTemplate = template.Must(template.New("DeleteVhd").Parse(`
 $ErrorActionPreference = 'Stop'
-if (Test-Path -Path '{{.Path}}') {
-	Remove-Item -Path '{{.Path}}' -Force
+
+$targetDirectory = (split-path '{{.Path}}' -Parent)
+$targetName = (split-path '{{.Path}}' -Leaf)
+$targetName = $targetName.Substring(0,$targetName.LastIndexOf('.')).split('\')[-1]
+
+Get-ChildItem -Path $targetDirectory |?{$_.BaseName.StartsWith($targetName)} | %{
+	Remove-Item $_.FullName -Force
 }
 `))
 

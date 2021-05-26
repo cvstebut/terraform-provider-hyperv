@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
 	"log"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/template"
+
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 )
 
 type ControllerType int
@@ -223,7 +224,7 @@ type createVmHardDiskDriveArgs struct {
 
 var createVmHardDiskDriveTemplate = template.Must(template.New("CreateVmHardDiskDrive").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmHardDiskDrive = '{{.VmHardDiskDriveJson}}' | ConvertFrom-Json
 
 $NewVmHardDiskDriveArgs = @{
@@ -279,6 +280,10 @@ func (c *HypervClient) CreateVmHardDiskDrive(
 		OverrideCacheAttributes:       overrideCacheAttributes,
 	})
 
+	if err != nil {
+		return err
+	}
+
 	err = c.runFireAndForgetScript(createVmHardDiskDriveTemplate, createVmHardDiskDriveArgs{
 		VmHardDiskDriveJson: string(vmHardDiskDriveJson),
 	})
@@ -333,7 +338,7 @@ type updateVmHardDiskDriveArgs struct {
 
 var updateVmHardDiskDriveTemplate = template.Must(template.New("UpdateVmHardDiskDrive").Parse(`
 $ErrorActionPreference = 'Stop'
-Get-Vm | Out-Null
+Import-Module Hyper-V
 $vmHardDiskDrive = '{{.VmHardDiskDriveJson}}' | ConvertFrom-Json
 
 $vmHardDiskDrivesObject = @(Get-VMHardDiskDrive -VmName '{{.VmName}}' -ControllerLocation {{.ControllerLocation}} -ControllerNumber {{.ControllerNumber}} )
@@ -396,6 +401,10 @@ func (c *HypervClient) UpdateVmHardDiskDrive(
 		QosPolicyId:                   qosPolicyId,
 		OverrideCacheAttributes:       overrideCacheAttributes,
 	})
+
+	if err != nil {
+		return err
+	}
 
 	err = c.runFireAndForgetScript(updateVmHardDiskDriveTemplate, updateVmHardDiskDriveArgs{
 		VmName:              vmName,
